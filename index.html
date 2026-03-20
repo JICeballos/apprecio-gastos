@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apprecio — Rendición de Gastos</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f2f2f2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:2.5rem 1rem}
+  .top-bar{width:100%;max-width:560px;display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-mark{width:36px;height:36px;border-radius:9px;background:#fa345e;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .logo-mark svg{width:20px;height:20px;fill:#fff}
+  .logo-text{font-size:18px;font-weight:700;color:#1b1b1b;letter-spacing:-0.3px}
+  .logo-sub{font-size:11px;color:#888;letter-spacing:0.2px}
+  .card{background:#fff;border-radius:16px;border:1px solid #e8e8e5;padding:2rem;width:100%;max-width:560px}
+  .card-title{font-size:15px;font-weight:600;color:#1b1b1b;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid #f0f0ee;display:flex;align-items:center;gap:8px}
+  .card-title::before{content:'';display:inline-block;width:3px;height:16px;background:#fa345e;border-radius:2px}
+  .form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  label{font-size:12px;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:0.4px}
+  input,select,textarea{width:100%;font-size:14px;padding:10px 12px;border:1.5px solid #e8e8e5;border-radius:9px;background:#fafafa;color:#1b1b1b;font-family:inherit;transition:border-color 0.15s,background 0.15s}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:#fa345e;background:#fff;box-shadow:0 0 0 3px rgba(250,52,94,0.08)}
+  textarea{resize:vertical;min-height:80px}
+  .amount-row{display:flex;gap:8px}
+  .amount-row select{width:100px;flex-shrink:0}
+  .amount-row input{flex:1}
+  .conv-box{display:none;margin-top:8px;padding:11px 14px;background:#f7f6fd;border:1.5px solid #b2a8e7;border-radius:9px;align-items:center;justify-content:space-between}
+  .conv-label{font-size:11px;color:#6b5fc7;font-weight:600;text-transform:uppercase;letter-spacing:0.4px}
+  .conv-rate{font-size:11px;color:#9b8fd9;margin-top:2px}
+  .conv-value{font-size:16px;font-weight:700;color:#3d2fa8}
+  .rate-src{font-size:11px;color:#aaa;margin-top:5px;display:none}
+  .upload-area{border:1.5px dashed #d8d8d4;border-radius:9px;padding:1.25rem;text-align:center;cursor:pointer;color:#aaa;font-size:13px;background:#fafafa;transition:all 0.15s}
+  .upload-area:hover{border-color:#fa345e;color:#fa345e;background:#fff5f7}
+  .upload-icon{margin-bottom:6px}
+  .upload-icon svg{width:24px;height:24px;stroke:#ccc;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;transition:stroke 0.15s}
+  .upload-area:hover .upload-icon svg{stroke:#fa345e}
+  .file-preview{display:none;align-items:center;gap:10px;padding:10px 12px;background:#f7f6fd;border:1.5px solid #b2a8e7;border-radius:9px;margin-top:8px;font-size:13px;color:#3d2fa8}
+  .file-preview .remove{margin-left:auto;cursor:pointer;color:#fa345e;font-size:12px;font-weight:600}
+  .btn-submit{width:100%;background:#fa345e;color:#fff;border:none;border-radius:9px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:background 0.15s,transform 0.1s;margin-top:8px;letter-spacing:0.2px}
+  .btn-submit:hover{background:#e0254e}
+  .btn-submit:active{transform:scale(0.99)}
+  .btn-submit:disabled{background:#f7a0b1;cursor:not-allowed}
+  .msg{display:none;padding:12px 16px;border-radius:9px;font-size:14px;margin-top:12px;text-align:center;font-weight:500}
+  .msg.success{background:#edfaf3;color:#1a6b3c;border:1px solid #b2dfc5}
+  .msg.error{background:#fff1f3;color:#a0142a;border:1px solid #f5b2be}
+  .required{color:#fa345e;margin-left:2px}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .divider{height:1px;background:#f0f0ee;margin:20px 0}
+  .footer{font-size:11px;color:#bbb;text-align:center;margin-top:1.25rem}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg>
+    </div>
+    <div>
+      <div class="logo-text">Apprecio</div>
+      <div class="logo-sub">Portal corporativo</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Rendición de gastos</div>
+
+  <form id="form" autocomplete="off">
+
+    <div class="form-group">
+      <label>Nombre completo <span class="required">*</span></label>
+      <input type="text" id="nombre" placeholder="Ej: María González" required>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>País <span class="required">*</span></label>
+        <select id="pais" required onchange="onPaisChange()">
+          <option value="">Selecciona...</option>
+          <option value="Chile">Chile</option>
+          <option value="Perú">Perú</option>
+          <option value="Colombia">Colombia</option>
+          <option value="México">México</option>
+          <option value="Estados Unidos">Estados Unidos</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Fecha del gasto <span class="required">*</span></label>
+        <input type="date" id="fecha" required onchange="fetchRate()">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Monto <span class="required">*</span></label>
+      <div class="amount-row">
+        <select id="moneda" required onchange="fetchRate()">
+          <option value="">Moneda</option>
+          <option value="CLP">CLP</option>
+          <option value="PEN">PEN</option>
+          <option value="COP">COP</option>
+          <option value="MXN">MXN</option>
+          <option value="USD">USD</option>
+        </select>
+        <input type="number" id="monto" placeholder="0" min="0" step="any" required oninput="updateConv()">
+      </div>
+      <div class="conv-box" id="conv-box">
+        <div>
+          <div class="conv-label">Equivalente en USD</div>
+          <div class="conv-rate" id="conv-rate">—</div>
+        </div>
+        <div class="conv-value" id="conv-usd">—</div>
+      </div>
+      <div class="rate-src" id="rate-src">Tipo de cambio: exchangerate.host</div>
+    </div>
+
+    <div class="form-group">
+      <label>Descripción <span class="required">*</span></label>
+      <textarea id="descripcion" placeholder="Describe brevemente el gasto..." required></textarea>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="form-group">
+      <label>Factura o boleta</label>
+      <div class="upload-area" id="upload-area" onclick="document.getElementById('archivo').click()">
+        <div class="upload-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div style="font-weight:600;color:#999">Adjunta la factura o boleta</div>
+        <div style="font-size:11px;margin-top:4px;color:#ccc">JPG, PNG o PDF · Máx. 10MB</div>
+      </div>
+      <input type="file" id="archivo" accept=".jpg,.jpeg,.png,.pdf" style="display:none" onchange="onFile(this)">
+      <div class="file-preview" id="file-preview">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b2a8e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span id="file-name">—</span>
+        <span class="remove" onclick="clearFile()">Quitar</span>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-submit" id="btn-submit">Enviar rendición</button>
+    <div class="msg" id="msg"></div>
+  </form>
+</div>
+
+<div class="footer">Apprecio · Uso interno · Los datos son enviados de forma segura</div>
+
+<script>
+const WEBHOOK_URL = 'TU_WEBHOOK_URL_AQUI';
+const PAIS_MONEDA = {'Chile':'CLP','Perú':'PEN','Colombia':'COP','México':'MXN','Estados Unidos':'USD'};
+let currentRate = null, selectedFile = null;
+
+function onPaisChange(){
+  const p = document.getElementById('pais').value;
+  if(p && PAIS_MONEDA[p]){ document.getElementById('moneda').value = PAIS_MONEDA[p]; fetchRate(); }
+}
+
+async function fetchRate(){
+  const moneda = document.getElementById('moneda').value;
+  const fecha = document.getElementById('fecha').value;
+  if(!moneda || !fecha) return;
+  if(moneda === 'USD'){ currentRate = 1; document.getElementById('conv-rate').textContent = '1 USD = 1 USD'; updateConv(); return; }
+  document.getElementById('conv-box').style.display = 'flex';
+  document.getElementById('rate-src').style.display = 'block';
+  document.getElementById('conv-usd').textContent = '...';
+  try{
+    const fechaFormato = fecha.replace(/-/g,'-');
+    const r = await fetch(`https://api.exchangerate.host/convert?from=${moneda}&to=USD&date=${fechaFormato}&amount=1`);
+    const d = await r.json();
+    currentRate = d.success && d.result ? d.result : null;
+    document.getElementById('conv-rate').textContent = currentRate ? `1 ${moneda} = ${currentRate.toFixed(6)} USD` : 'Tasa no disponible';
+  } catch(e){ currentRate = null; document.getElementById('conv-rate').textContent = 'Error al consultar'; }
+  updateConv();
+}
+
+function updateConv(){
+  const moneda = document.getElementById('moneda').value;
+  const monto = parseFloat(document.getElementById('monto').value);
+  if(!moneda) return;
+  document.getElementById('conv-box').style.display = 'flex';
+  document.getElementById('rate-src').style.display = 'block';
+  if(!monto || isNaN(monto) || !currentRate){ document.getElementById('conv-usd').textContent = '—'; return; }
+  document.getElementById('conv-usd').textContent = 'USD ' + (monto * currentRate).toFixed(2);
+}
+
+function onFile(input){
+  if(input.files[0]){
+    selectedFile = input.files[0];
+    document.getElementById('file-name').textContent = selectedFile.name;
+    document.getElementById('file-preview').style.display = 'flex';
+    document.getElementById('upload-area').style.display = 'none';
+  }
+}
+
+function clearFile(){
+  selectedFile = null;
+  document.getElementById('archivo').value = '';
+  document.getElementById('file-preview').style.display = 'none';
+  document.getElementById('upload-area').style.display = 'block';
+}
+
+function showMsg(type, txt){
+  const el = document.getElementById('msg');
+  el.className = 'msg ' + type;
+  el.textContent = txt;
+  el.style.display = 'block';
+}
+
+document.getElementById('form').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Enviando...';
+  const fd = new FormData();
+  fd.append('nombre', document.getElementById('nombre').value.trim());
+  fd.append('pais', document.getElementById('pais').value);
+  fd.append('fecha', document.getElementById('fecha').value);
+  fd.append('moneda', document.getElementById('moneda').value);
+  fd.append('monto', document.getElementById('monto').value);
+  fd.append('descripcion', document.getElementById('descripcion').value.trim());
+  fd.append('tasa_usd', currentRate ?? '');
+  const monto = parseFloat(document.getElementById('monto').value);
+  fd.append('monto_usd', currentRate && monto ? (monto * currentRate).toFixed(2) : '');
+  if(selectedFile) fd.append('archivo', selectedFile);
+  try{
+    const res = await fetch(WEBHOOK_URL, { method:'POST', body: fd });
+    if(res.ok){
+      showMsg('success', 'Rendición enviada correctamente. Contabilidad la recibirá en breve.');
+      document.getElementById('form').reset();
+      clearFile();
+      currentRate = null;
+      document.getElementById('conv-box').style.display = 'none';
+      document.getElementById('rate-src').style.display = 'none';
+    } else { showMsg('error', 'Hubo un error al enviar. Intenta nuevamente.'); }
+  } catch(err){ showMsg('error', 'No se pudo conectar con el servidor. Verifica tu conexión.'); }
+  btn.disabled = false;
+  btn.innerHTML = 'Enviar rendición';
+});
+</script>
+</body>
+</html>
