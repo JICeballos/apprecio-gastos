@@ -113,7 +113,7 @@
         </div>
         <div class="conv-value" id="conv-usd">—</div>
       </div>
-      <div class="rate-src" id="rate-src">Tipo de cambio: exchangerate.host</div>
+      <div class="rate-src" id="rate-src">Tipo de cambio: Open Exchange Rates</div>
     </div>
 
     <div class="form-group">
@@ -166,10 +166,13 @@ async function fetchRate(){
   document.getElementById('rate-src').style.display = 'block';
   document.getElementById('conv-usd').textContent = '...';
   try{
-    const fechaFormato = fecha.replace(/-/g,'-');
-    const r = await fetch(`https://api.exchangerate.host/convert?from=${moneda}&to=USD&date=${fechaFormato}&amount=1`);
+    const APP_ID = '6d5356ba4bd44e6989cfe14b1983aeb9';
+    const fechaFormato = fecha;
+    const r = await fetch(`https://openexchangerates.org/api/historical/${fechaFormato}.json?app_id=${APP_ID}&symbols=${moneda},USD`);
     const d = await r.json();
-    currentRate = d.success && d.result ? d.result : null;
+    if(d.rates && d.rates[moneda] && d.rates.USD){
+      currentRate = d.rates.USD / d.rates[moneda];
+    } else { currentRate = null; }
     document.getElementById('conv-rate').textContent = currentRate ? `1 ${moneda} = ${currentRate.toFixed(6)} USD` : 'Tasa no disponible';
   } catch(e){ currentRate = null; document.getElementById('conv-rate').textContent = 'Error al consultar'; }
   updateConv();
