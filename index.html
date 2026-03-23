@@ -241,7 +241,7 @@ async function fetchRateForGasto(id){
     if(d.rates){
       const rateMoneda = moneda === 'USD' ? 1 : (1 / d.rates[moneda]);
       const rateLocal = monedaLocal === 'USD' ? 1 : d.rates[monedaLocal];
-      g.rate = rateMoneda * rateLocal;
+      g.rate = parseFloat((rateMoneda * rateLocal).toFixed(6));
     } else { g.rate = null; }
     document.getElementById('conv-rate-'+id).textContent = g.rate ? `1 ${moneda} = ${g.rate.toFixed(4)} ${monedaLocal}` : 'Tasa no disponible';
   } catch(e){ g.rate = null; document.getElementById('conv-rate-'+id).textContent = 'Error al consultar'; }
