@@ -83,6 +83,7 @@ input:focus,select:focus{outline:none;border-color:#fa345e;box-shadow:0 0 0 3px 
         <option value="Colombia">Colombia</option>
         <option value="México">México</option>
         <option value="Estados Unidos">Estados Unidos</option>
+        <option value="España">España</option>
       </select>
     </div>
   </div>
@@ -124,8 +125,941 @@ input:focus,select:focus{outline:none;border-color:#fa345e;box-shadow:0 0 0 3px 
 <script>
 const WEBHOOK_URL = 'https://n8n.openip.cl/webhook/apprecio-gastos';
 const APP_ID = '6d5356ba4bd44e6989cfe14b1983aeb9';
-const PAIS_MONEDA = {Chile:'CLP',Perú:'PEN',Colombia:'COP',México:'MXN','Estados Unidos':'USD'};
-const MONEDA_SIMBOLO = {CLP:'$',PEN:'S/',COP:'$',MXN:'$',USD:'$'};
+const PAIS_MONEDA = {Chile:'CLP',Perú:'PEN',Colombia:'COP',México:'MXN','Estados Unidos':'USD',España:'EUR'};
+const MONEDA_SIMBOLO = {CLP:'
+let gastos = [], gastoCount = 0;
+
+function getMonedaLocal(){ return PAIS_MONEDA[document.getElementById('pais').value] || null; }
+
+function onPaisChange(){
+  const monedaLocal = getMonedaLocal();
+  gastos.forEach(g => {
+    const sel = document.getElementById('moneda-'+g.id);
+    if(sel && monedaLocal) sel.value = monedaLocal;
+    fetchRateForGasto(g.id);
+  });
+  actualizarTotal();
+  const pais = document.getElementById('pais').value;
+  document.getElementById('total-currency').textContent = monedaLocal ? `en ${monedaLocal} · moneda local de ${pais}` : 'Selecciona un país primero';
+}
+
+function agregarGasto(){
+  if(gastos.length >= 10){ alert('Máximo 10 gastos por rendición'); return; }
+  gastoCount++;
+  const id = gastoCount;
+  gastos.push({id, rate: null, file: null});
+  const monedaLocal = getMonedaLocal();
+  const hoy = new Date().toISOString().split('T')[0];
+  const div = document.createElement('div');
+  div.className = 'gasto-card';
+  div.id = 'gasto-'+id;
+  div.innerHTML = `
+    <div class="gasto-header">
+      <span class="gasto-num">Gasto #${id}</span>
+      <button class="btn-remove" onclick="quitarGasto(${id})">×</button>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Fecha *</label>
+        <input type="date" id="fecha-${id}" value="${hoy}" onchange="if(this.value.length===10) fetchRateForGasto(${id})">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Monto *</label>
+        <div class="amount-row">
+          <select id="moneda-${id}" onchange="fetchRateForGasto(${id})">
+            <option value="">—</option>
+            <option value="CLP" ${monedaLocal==='CLP'?'selected':''}>CLP</option>
+            <option value="PEN" ${monedaLocal==='PEN'?'selected':''}>PEN</option>
+            <option value="COP" ${monedaLocal==='COP'?'selected':''}>COP</option>
+            <option value="MXN" ${monedaLocal==='MXN'?'selected':''}>MXN</option>
+            <option value="USD" ${monedaLocal==='USD'?'selected':''}>USD</option>
+            <option value="EUR" ${monedaLocal==='EUR'?'selected':''}>EUR</option>
+          </select>
+          <input type="number" id="monto-${id}" placeholder="0" min="0" step="any" oninput="updateConvGasto(${id})">
+        </div>
+        <div class="conv-pill" id="conv-${id}">
+          <div class="conv-left">
+            <div class="conv-label" id="conv-label-${id}">Equiv. en moneda local</div>
+            <div class="conv-rate" id="conv-rate-${id}">—</div>
+          </div>
+          <div class="conv-value" id="conv-val-${id}">—</div>
+        </div>
+        <div class="rate-src" id="rate-src-${id}">Open Exchange Rates</div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Descripción *</label>
+      <input type="text" id="desc-${id}" placeholder="Ej: Almuerzo con cliente">
+    </div>
+    <div class="form-group" style="margin-bottom:0">
+      <label>Factura / Boleta</label>
+      <div class="upload-area" onclick="document.getElementById('file-${id}').click()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:3px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div>Adjuntar archivo · JPG, PNG o PDF</div>
+      </div>
+      <input type="file" id="file-${id}" accept=".jpg,.jpeg,.png,.pdf" style="display:none" onchange="onFileGasto(${id},this)">
+      <div class="file-preview" id="fprev-${id}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b2a8e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span id="fname-${id}">—</span>
+        <span class="remove-file" onclick="clearFileGasto(${id})">Quitar</span>
+      </div>
+    </div>`;
+  document.getElementById('gastos-container').appendChild(div);
+  if(monedaLocal) fetchRateForGasto(id);
+}
+
+function quitarGasto(id){
+  gastos = gastos.filter(g => g.id !== id);
+  document.getElementById('gasto-'+id).remove();
+  actualizarTotal();
+}
+
+async function fetchRateForGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const fecha = document.getElementById('fecha-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  if(!g || !moneda || !fecha || fecha.length !== 10 || !monedaLocal) return;
+  if(moneda === monedaLocal){ g.rate = 1; updateConvGasto(id); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  document.getElementById('rate-src-'+id).style.display = 'block';
+  document.getElementById('conv-label-'+id).textContent = `Equiv. en ${monedaLocal}`;
+  document.getElementById('conv-val-'+id).textContent = '...';
+  try{
+    const symbols = moneda === 'USD' ? monedaLocal : `${moneda},${monedaLocal}`;
+    const r = await fetch(`https://openexchangerates.org/api/historical/${fecha}.json?app_id=${APP_ID}&symbols=${symbols}`);
+    const d = await r.json();
+    if(d.rates){
+      const rateMoneda = moneda === 'USD' ? 1 : (1 / d.rates[moneda]);
+      const rateLocal = monedaLocal === 'USD' ? 1 : d.rates[monedaLocal];
+      g.rate = parseFloat((rateMoneda * rateLocal).toFixed(6));
+    } else { g.rate = null; }
+    document.getElementById('conv-rate-'+id).textContent = g.rate ? `1 ${moneda} = ${g.rate.toFixed(4)} ${monedaLocal}` : 'Tasa no disponible';
+  } catch(e){ g.rate = null; document.getElementById('conv-rate-'+id).textContent = 'Error al consultar'; }
+  updateConvGasto(id);
+}
+
+function updateConvGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  const monto = parseFloat(document.getElementById('monto-'+id)?.value);
+  if(!g || !moneda || !monedaLocal) return;
+  if(moneda === monedaLocal){ document.getElementById('conv-'+id).style.display = 'none'; actualizarTotal(); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  if(!monto || isNaN(monto) || !g.rate){ document.getElementById('conv-val-'+id).textContent = '—'; actualizarTotal(); return; }
+  const equiv = monto * g.rate;
+  const simbolo = MONEDA_SIMBOLO[monedaLocal] || '';
+  document.getElementById('conv-val-'+id).textContent = `${simbolo}${equiv.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}`;
+  actualizarTotal();
+}
+
+function actualizarTotal(){
+  const monedaLocal = getMonedaLocal();
+  let total = 0, ok = true;
+  gastos.forEach(g => {
+    const monto = parseFloat(document.getElementById('monto-'+g.id)?.value || 0);
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    if(!moneda) return;
+    if(moneda === monedaLocal){ total += monto; }
+    else if(g.rate && monto){ total += monto * g.rate; }
+    else if(monto){ ok = false; }
+  });
+  const simbolo = monedaLocal ? (MONEDA_SIMBOLO[monedaLocal] || '') : '';
+  document.getElementById('total-local').textContent = monedaLocal
+    ? (ok ? `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}` : `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal} *`)
+    : '—';
+}
+
+function onFileGasto(id, input){
+  const g = gastos.find(x => x.id === id);
+  if(!g || !input.files[0]) return;
+  g.file = input.files[0];
+  document.getElementById('fname-'+id).textContent = g.file.name;
+  document.getElementById('fprev-'+id).style.display = 'flex';
+}
+
+function clearFileGasto(id){
+  const g = gastos.find(x => x.id === id);
+  if(!g) return;
+  g.file = null;
+  document.getElementById('file-'+id).value = '';
+  document.getElementById('fprev-'+id).style.display = 'none';
+}
+
+function showMsg(type, txt){
+  const el = document.getElementById('msg');
+  el.className = 'msg '+type;
+  el.textContent = txt;
+  el.style.display = 'block';
+}
+
+async function enviarRendicion(){
+  const nombre = document.getElementById('nombre').value.trim();
+  const pais = document.getElementById('pais').value;
+  const correoAprobador = document.getElementById('correo-aprobador').value.trim();
+  const nombreAprobador = document.getElementById('nombre-aprobador').value.trim();
+  const monedaLocal = getMonedaLocal();
+  if(!nombre||!pais||!correoAprobador||!nombreAprobador){ showMsg('error','Completa todos los datos del trabajador y aprobador'); return; }
+  if(gastos.length===0){ showMsg('error','Agrega al menos un gasto'); return; }
+  for(const g of gastos){
+    const monto = document.getElementById('monto-'+g.id)?.value;
+    const desc = document.getElementById('desc-'+g.id)?.value;
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    const fecha = document.getElementById('fecha-'+g.id)?.value;
+    if(!monto||!desc||!moneda||!fecha){ showMsg('error',`Completa todos los campos del gasto #${g.id}`); return; }
+  }
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Enviando...';
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const rendicionId = `REN-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  try{
+    for(let i=0; i<gastos.length; i++){
+      const g = gastos[i];
+      const monto = parseFloat(document.getElementById('monto-'+g.id).value);
+      const moneda = document.getElementById('moneda-'+g.id).value;
+      const fecha = document.getElementById('fecha-'+g.id).value;
+      const desc = document.getElementById('desc-'+g.id).value.trim();
+      const esLocal = moneda === monedaLocal;
+      const montoLocal = esLocal ? monto : (g.rate && monto ? parseFloat((monto * g.rate).toFixed(2)) : '');
+      const tasaCambio = esLocal ? 1 : (g.rate ? parseFloat(g.rate.toFixed(6)) : '');
+      const fd = new FormData();
+      fd.append('rendicion_id', rendicionId);
+      fd.append('nombre', nombre);
+      fd.append('pais', pais);
+      fd.append('correo_aprobador', correoAprobador);
+      fd.append('nombre_aprobador', nombreAprobador);
+      fd.append('gasto_num', i+1);
+      fd.append('total_gastos', gastos.length);
+      fd.append('fecha', fecha);
+      fd.append('moneda_original', moneda);
+      fd.append('monto_original', monto);
+      fd.append('moneda_local', monedaLocal);
+      fd.append('tasa_cambio', tasaCambio);
+      fd.append('monto_local', montoLocal);
+      if(g.file) fd.append('archivo', g.file);
+      await fetch(WEBHOOK_URL, {method:'POST', body:fd});
+    }
+    showMsg('success','Rendición enviada correctamente. Tu aprobador recibirá un correo de notificación.');
+    document.getElementById('nombre').value='';
+    document.getElementById('pais').value='';
+    document.getElementById('correo-aprobador').value='';
+    document.getElementById('nombre-aprobador').value='';
+    document.getElementById('gastos-container').innerHTML='';
+    gastos=[]; gastoCount=0;
+    document.getElementById('total-local').textContent='—';
+    document.getElementById('total-currency').textContent='Selecciona un país primero';
+  } catch(err){ showMsg('error','No se pudo conectar con el servidor. Verifica tu conexión.'); }
+  btn.disabled=false;
+  btn.innerHTML='Enviar rendición';
+}
+
+agregarGasto();
+</script>
+</body>
+</html>
+,PEN:'S/',COP:'
+let gastos = [], gastoCount = 0;
+
+function getMonedaLocal(){ return PAIS_MONEDA[document.getElementById('pais').value] || null; }
+
+function onPaisChange(){
+  const monedaLocal = getMonedaLocal();
+  gastos.forEach(g => {
+    const sel = document.getElementById('moneda-'+g.id);
+    if(sel && monedaLocal) sel.value = monedaLocal;
+    fetchRateForGasto(g.id);
+  });
+  actualizarTotal();
+  const pais = document.getElementById('pais').value;
+  document.getElementById('total-currency').textContent = monedaLocal ? `en ${monedaLocal} · moneda local de ${pais}` : 'Selecciona un país primero';
+}
+
+function agregarGasto(){
+  if(gastos.length >= 10){ alert('Máximo 10 gastos por rendición'); return; }
+  gastoCount++;
+  const id = gastoCount;
+  gastos.push({id, rate: null, file: null});
+  const monedaLocal = getMonedaLocal();
+  const hoy = new Date().toISOString().split('T')[0];
+  const div = document.createElement('div');
+  div.className = 'gasto-card';
+  div.id = 'gasto-'+id;
+  div.innerHTML = `
+    <div class="gasto-header">
+      <span class="gasto-num">Gasto #${id}</span>
+      <button class="btn-remove" onclick="quitarGasto(${id})">×</button>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Fecha *</label>
+        <input type="date" id="fecha-${id}" value="${hoy}" onchange="if(this.value.length===10) fetchRateForGasto(${id})">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Monto *</label>
+        <div class="amount-row">
+          <select id="moneda-${id}" onchange="fetchRateForGasto(${id})">
+            <option value="">—</option>
+            <option value="CLP" ${monedaLocal==='CLP'?'selected':''}>CLP</option>
+            <option value="PEN" ${monedaLocal==='PEN'?'selected':''}>PEN</option>
+            <option value="COP" ${monedaLocal==='COP'?'selected':''}>COP</option>
+            <option value="MXN" ${monedaLocal==='MXN'?'selected':''}>MXN</option>
+            <option value="USD" ${monedaLocal==='USD'?'selected':''}>USD</option>
+          </select>
+          <input type="number" id="monto-${id}" placeholder="0" min="0" step="any" oninput="updateConvGasto(${id})">
+        </div>
+        <div class="conv-pill" id="conv-${id}">
+          <div class="conv-left">
+            <div class="conv-label" id="conv-label-${id}">Equiv. en moneda local</div>
+            <div class="conv-rate" id="conv-rate-${id}">—</div>
+          </div>
+          <div class="conv-value" id="conv-val-${id}">—</div>
+        </div>
+        <div class="rate-src" id="rate-src-${id}">Open Exchange Rates</div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Descripción *</label>
+      <input type="text" id="desc-${id}" placeholder="Ej: Almuerzo con cliente">
+    </div>
+    <div class="form-group" style="margin-bottom:0">
+      <label>Factura / Boleta</label>
+      <div class="upload-area" onclick="document.getElementById('file-${id}').click()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:3px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div>Adjuntar archivo · JPG, PNG o PDF</div>
+      </div>
+      <input type="file" id="file-${id}" accept=".jpg,.jpeg,.png,.pdf" style="display:none" onchange="onFileGasto(${id},this)">
+      <div class="file-preview" id="fprev-${id}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b2a8e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span id="fname-${id}">—</span>
+        <span class="remove-file" onclick="clearFileGasto(${id})">Quitar</span>
+      </div>
+    </div>`;
+  document.getElementById('gastos-container').appendChild(div);
+  if(monedaLocal) fetchRateForGasto(id);
+}
+
+function quitarGasto(id){
+  gastos = gastos.filter(g => g.id !== id);
+  document.getElementById('gasto-'+id).remove();
+  actualizarTotal();
+}
+
+async function fetchRateForGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const fecha = document.getElementById('fecha-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  if(!g || !moneda || !fecha || fecha.length !== 10 || !monedaLocal) return;
+  if(moneda === monedaLocal){ g.rate = 1; updateConvGasto(id); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  document.getElementById('rate-src-'+id).style.display = 'block';
+  document.getElementById('conv-label-'+id).textContent = `Equiv. en ${monedaLocal}`;
+  document.getElementById('conv-val-'+id).textContent = '...';
+  try{
+    const symbols = moneda === 'USD' ? monedaLocal : `${moneda},${monedaLocal}`;
+    const r = await fetch(`https://openexchangerates.org/api/historical/${fecha}.json?app_id=${APP_ID}&symbols=${symbols}`);
+    const d = await r.json();
+    if(d.rates){
+      const rateMoneda = moneda === 'USD' ? 1 : (1 / d.rates[moneda]);
+      const rateLocal = monedaLocal === 'USD' ? 1 : d.rates[monedaLocal];
+      g.rate = parseFloat((rateMoneda * rateLocal).toFixed(6));
+    } else { g.rate = null; }
+    document.getElementById('conv-rate-'+id).textContent = g.rate ? `1 ${moneda} = ${g.rate.toFixed(4)} ${monedaLocal}` : 'Tasa no disponible';
+  } catch(e){ g.rate = null; document.getElementById('conv-rate-'+id).textContent = 'Error al consultar'; }
+  updateConvGasto(id);
+}
+
+function updateConvGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  const monto = parseFloat(document.getElementById('monto-'+id)?.value);
+  if(!g || !moneda || !monedaLocal) return;
+  if(moneda === monedaLocal){ document.getElementById('conv-'+id).style.display = 'none'; actualizarTotal(); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  if(!monto || isNaN(monto) || !g.rate){ document.getElementById('conv-val-'+id).textContent = '—'; actualizarTotal(); return; }
+  const equiv = monto * g.rate;
+  const simbolo = MONEDA_SIMBOLO[monedaLocal] || '';
+  document.getElementById('conv-val-'+id).textContent = `${simbolo}${equiv.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}`;
+  actualizarTotal();
+}
+
+function actualizarTotal(){
+  const monedaLocal = getMonedaLocal();
+  let total = 0, ok = true;
+  gastos.forEach(g => {
+    const monto = parseFloat(document.getElementById('monto-'+g.id)?.value || 0);
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    if(!moneda) return;
+    if(moneda === monedaLocal){ total += monto; }
+    else if(g.rate && monto){ total += monto * g.rate; }
+    else if(monto){ ok = false; }
+  });
+  const simbolo = monedaLocal ? (MONEDA_SIMBOLO[monedaLocal] || '') : '';
+  document.getElementById('total-local').textContent = monedaLocal
+    ? (ok ? `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}` : `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal} *`)
+    : '—';
+}
+
+function onFileGasto(id, input){
+  const g = gastos.find(x => x.id === id);
+  if(!g || !input.files[0]) return;
+  g.file = input.files[0];
+  document.getElementById('fname-'+id).textContent = g.file.name;
+  document.getElementById('fprev-'+id).style.display = 'flex';
+}
+
+function clearFileGasto(id){
+  const g = gastos.find(x => x.id === id);
+  if(!g) return;
+  g.file = null;
+  document.getElementById('file-'+id).value = '';
+  document.getElementById('fprev-'+id).style.display = 'none';
+}
+
+function showMsg(type, txt){
+  const el = document.getElementById('msg');
+  el.className = 'msg '+type;
+  el.textContent = txt;
+  el.style.display = 'block';
+}
+
+async function enviarRendicion(){
+  const nombre = document.getElementById('nombre').value.trim();
+  const pais = document.getElementById('pais').value;
+  const correoAprobador = document.getElementById('correo-aprobador').value.trim();
+  const nombreAprobador = document.getElementById('nombre-aprobador').value.trim();
+  const monedaLocal = getMonedaLocal();
+  if(!nombre||!pais||!correoAprobador||!nombreAprobador){ showMsg('error','Completa todos los datos del trabajador y aprobador'); return; }
+  if(gastos.length===0){ showMsg('error','Agrega al menos un gasto'); return; }
+  for(const g of gastos){
+    const monto = document.getElementById('monto-'+g.id)?.value;
+    const desc = document.getElementById('desc-'+g.id)?.value;
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    const fecha = document.getElementById('fecha-'+g.id)?.value;
+    if(!monto||!desc||!moneda||!fecha){ showMsg('error',`Completa todos los campos del gasto #${g.id}`); return; }
+  }
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Enviando...';
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const rendicionId = `REN-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  try{
+    for(let i=0; i<gastos.length; i++){
+      const g = gastos[i];
+      const monto = parseFloat(document.getElementById('monto-'+g.id).value);
+      const moneda = document.getElementById('moneda-'+g.id).value;
+      const fecha = document.getElementById('fecha-'+g.id).value;
+      const desc = document.getElementById('desc-'+g.id).value.trim();
+      const esLocal = moneda === monedaLocal;
+      const montoLocal = esLocal ? monto : (g.rate && monto ? parseFloat((monto * g.rate).toFixed(2)) : '');
+      const tasaCambio = esLocal ? 1 : (g.rate ? parseFloat(g.rate.toFixed(6)) : '');
+      const fd = new FormData();
+      fd.append('rendicion_id', rendicionId);
+      fd.append('nombre', nombre);
+      fd.append('pais', pais);
+      fd.append('correo_aprobador', correoAprobador);
+      fd.append('nombre_aprobador', nombreAprobador);
+      fd.append('gasto_num', i+1);
+      fd.append('total_gastos', gastos.length);
+      fd.append('fecha', fecha);
+      fd.append('moneda_original', moneda);
+      fd.append('monto_original', monto);
+      fd.append('moneda_local', monedaLocal);
+      fd.append('tasa_cambio', tasaCambio);
+      fd.append('monto_local', montoLocal);
+      if(g.file) fd.append('archivo', g.file);
+      await fetch(WEBHOOK_URL, {method:'POST', body:fd});
+    }
+    showMsg('success','Rendición enviada correctamente. Tu aprobador recibirá un correo de notificación.');
+    document.getElementById('nombre').value='';
+    document.getElementById('pais').value='';
+    document.getElementById('correo-aprobador').value='';
+    document.getElementById('nombre-aprobador').value='';
+    document.getElementById('gastos-container').innerHTML='';
+    gastos=[]; gastoCount=0;
+    document.getElementById('total-local').textContent='—';
+    document.getElementById('total-currency').textContent='Selecciona un país primero';
+  } catch(err){ showMsg('error','No se pudo conectar con el servidor. Verifica tu conexión.'); }
+  btn.disabled=false;
+  btn.innerHTML='Enviar rendición';
+}
+
+agregarGasto();
+</script>
+</body>
+</html>
+,MXN:'
+let gastos = [], gastoCount = 0;
+
+function getMonedaLocal(){ return PAIS_MONEDA[document.getElementById('pais').value] || null; }
+
+function onPaisChange(){
+  const monedaLocal = getMonedaLocal();
+  gastos.forEach(g => {
+    const sel = document.getElementById('moneda-'+g.id);
+    if(sel && monedaLocal) sel.value = monedaLocal;
+    fetchRateForGasto(g.id);
+  });
+  actualizarTotal();
+  const pais = document.getElementById('pais').value;
+  document.getElementById('total-currency').textContent = monedaLocal ? `en ${monedaLocal} · moneda local de ${pais}` : 'Selecciona un país primero';
+}
+
+function agregarGasto(){
+  if(gastos.length >= 10){ alert('Máximo 10 gastos por rendición'); return; }
+  gastoCount++;
+  const id = gastoCount;
+  gastos.push({id, rate: null, file: null});
+  const monedaLocal = getMonedaLocal();
+  const hoy = new Date().toISOString().split('T')[0];
+  const div = document.createElement('div');
+  div.className = 'gasto-card';
+  div.id = 'gasto-'+id;
+  div.innerHTML = `
+    <div class="gasto-header">
+      <span class="gasto-num">Gasto #${id}</span>
+      <button class="btn-remove" onclick="quitarGasto(${id})">×</button>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Fecha *</label>
+        <input type="date" id="fecha-${id}" value="${hoy}" onchange="if(this.value.length===10) fetchRateForGasto(${id})">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Monto *</label>
+        <div class="amount-row">
+          <select id="moneda-${id}" onchange="fetchRateForGasto(${id})">
+            <option value="">—</option>
+            <option value="CLP" ${monedaLocal==='CLP'?'selected':''}>CLP</option>
+            <option value="PEN" ${monedaLocal==='PEN'?'selected':''}>PEN</option>
+            <option value="COP" ${monedaLocal==='COP'?'selected':''}>COP</option>
+            <option value="MXN" ${monedaLocal==='MXN'?'selected':''}>MXN</option>
+            <option value="USD" ${monedaLocal==='USD'?'selected':''}>USD</option>
+          </select>
+          <input type="number" id="monto-${id}" placeholder="0" min="0" step="any" oninput="updateConvGasto(${id})">
+        </div>
+        <div class="conv-pill" id="conv-${id}">
+          <div class="conv-left">
+            <div class="conv-label" id="conv-label-${id}">Equiv. en moneda local</div>
+            <div class="conv-rate" id="conv-rate-${id}">—</div>
+          </div>
+          <div class="conv-value" id="conv-val-${id}">—</div>
+        </div>
+        <div class="rate-src" id="rate-src-${id}">Open Exchange Rates</div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Descripción *</label>
+      <input type="text" id="desc-${id}" placeholder="Ej: Almuerzo con cliente">
+    </div>
+    <div class="form-group" style="margin-bottom:0">
+      <label>Factura / Boleta</label>
+      <div class="upload-area" onclick="document.getElementById('file-${id}').click()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:3px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div>Adjuntar archivo · JPG, PNG o PDF</div>
+      </div>
+      <input type="file" id="file-${id}" accept=".jpg,.jpeg,.png,.pdf" style="display:none" onchange="onFileGasto(${id},this)">
+      <div class="file-preview" id="fprev-${id}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b2a8e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span id="fname-${id}">—</span>
+        <span class="remove-file" onclick="clearFileGasto(${id})">Quitar</span>
+      </div>
+    </div>`;
+  document.getElementById('gastos-container').appendChild(div);
+  if(monedaLocal) fetchRateForGasto(id);
+}
+
+function quitarGasto(id){
+  gastos = gastos.filter(g => g.id !== id);
+  document.getElementById('gasto-'+id).remove();
+  actualizarTotal();
+}
+
+async function fetchRateForGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const fecha = document.getElementById('fecha-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  if(!g || !moneda || !fecha || fecha.length !== 10 || !monedaLocal) return;
+  if(moneda === monedaLocal){ g.rate = 1; updateConvGasto(id); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  document.getElementById('rate-src-'+id).style.display = 'block';
+  document.getElementById('conv-label-'+id).textContent = `Equiv. en ${monedaLocal}`;
+  document.getElementById('conv-val-'+id).textContent = '...';
+  try{
+    const symbols = moneda === 'USD' ? monedaLocal : `${moneda},${monedaLocal}`;
+    const r = await fetch(`https://openexchangerates.org/api/historical/${fecha}.json?app_id=${APP_ID}&symbols=${symbols}`);
+    const d = await r.json();
+    if(d.rates){
+      const rateMoneda = moneda === 'USD' ? 1 : (1 / d.rates[moneda]);
+      const rateLocal = monedaLocal === 'USD' ? 1 : d.rates[monedaLocal];
+      g.rate = parseFloat((rateMoneda * rateLocal).toFixed(6));
+    } else { g.rate = null; }
+    document.getElementById('conv-rate-'+id).textContent = g.rate ? `1 ${moneda} = ${g.rate.toFixed(4)} ${monedaLocal}` : 'Tasa no disponible';
+  } catch(e){ g.rate = null; document.getElementById('conv-rate-'+id).textContent = 'Error al consultar'; }
+  updateConvGasto(id);
+}
+
+function updateConvGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  const monto = parseFloat(document.getElementById('monto-'+id)?.value);
+  if(!g || !moneda || !monedaLocal) return;
+  if(moneda === monedaLocal){ document.getElementById('conv-'+id).style.display = 'none'; actualizarTotal(); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  if(!monto || isNaN(monto) || !g.rate){ document.getElementById('conv-val-'+id).textContent = '—'; actualizarTotal(); return; }
+  const equiv = monto * g.rate;
+  const simbolo = MONEDA_SIMBOLO[monedaLocal] || '';
+  document.getElementById('conv-val-'+id).textContent = `${simbolo}${equiv.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}`;
+  actualizarTotal();
+}
+
+function actualizarTotal(){
+  const monedaLocal = getMonedaLocal();
+  let total = 0, ok = true;
+  gastos.forEach(g => {
+    const monto = parseFloat(document.getElementById('monto-'+g.id)?.value || 0);
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    if(!moneda) return;
+    if(moneda === monedaLocal){ total += monto; }
+    else if(g.rate && monto){ total += monto * g.rate; }
+    else if(monto){ ok = false; }
+  });
+  const simbolo = monedaLocal ? (MONEDA_SIMBOLO[monedaLocal] || '') : '';
+  document.getElementById('total-local').textContent = monedaLocal
+    ? (ok ? `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}` : `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal} *`)
+    : '—';
+}
+
+function onFileGasto(id, input){
+  const g = gastos.find(x => x.id === id);
+  if(!g || !input.files[0]) return;
+  g.file = input.files[0];
+  document.getElementById('fname-'+id).textContent = g.file.name;
+  document.getElementById('fprev-'+id).style.display = 'flex';
+}
+
+function clearFileGasto(id){
+  const g = gastos.find(x => x.id === id);
+  if(!g) return;
+  g.file = null;
+  document.getElementById('file-'+id).value = '';
+  document.getElementById('fprev-'+id).style.display = 'none';
+}
+
+function showMsg(type, txt){
+  const el = document.getElementById('msg');
+  el.className = 'msg '+type;
+  el.textContent = txt;
+  el.style.display = 'block';
+}
+
+async function enviarRendicion(){
+  const nombre = document.getElementById('nombre').value.trim();
+  const pais = document.getElementById('pais').value;
+  const correoAprobador = document.getElementById('correo-aprobador').value.trim();
+  const nombreAprobador = document.getElementById('nombre-aprobador').value.trim();
+  const monedaLocal = getMonedaLocal();
+  if(!nombre||!pais||!correoAprobador||!nombreAprobador){ showMsg('error','Completa todos los datos del trabajador y aprobador'); return; }
+  if(gastos.length===0){ showMsg('error','Agrega al menos un gasto'); return; }
+  for(const g of gastos){
+    const monto = document.getElementById('monto-'+g.id)?.value;
+    const desc = document.getElementById('desc-'+g.id)?.value;
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    const fecha = document.getElementById('fecha-'+g.id)?.value;
+    if(!monto||!desc||!moneda||!fecha){ showMsg('error',`Completa todos los campos del gasto #${g.id}`); return; }
+  }
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Enviando...';
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const rendicionId = `REN-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  try{
+    for(let i=0; i<gastos.length; i++){
+      const g = gastos[i];
+      const monto = parseFloat(document.getElementById('monto-'+g.id).value);
+      const moneda = document.getElementById('moneda-'+g.id).value;
+      const fecha = document.getElementById('fecha-'+g.id).value;
+      const desc = document.getElementById('desc-'+g.id).value.trim();
+      const esLocal = moneda === monedaLocal;
+      const montoLocal = esLocal ? monto : (g.rate && monto ? parseFloat((monto * g.rate).toFixed(2)) : '');
+      const tasaCambio = esLocal ? 1 : (g.rate ? parseFloat(g.rate.toFixed(6)) : '');
+      const fd = new FormData();
+      fd.append('rendicion_id', rendicionId);
+      fd.append('nombre', nombre);
+      fd.append('pais', pais);
+      fd.append('correo_aprobador', correoAprobador);
+      fd.append('nombre_aprobador', nombreAprobador);
+      fd.append('gasto_num', i+1);
+      fd.append('total_gastos', gastos.length);
+      fd.append('fecha', fecha);
+      fd.append('moneda_original', moneda);
+      fd.append('monto_original', monto);
+      fd.append('moneda_local', monedaLocal);
+      fd.append('tasa_cambio', tasaCambio);
+      fd.append('monto_local', montoLocal);
+      if(g.file) fd.append('archivo', g.file);
+      await fetch(WEBHOOK_URL, {method:'POST', body:fd});
+    }
+    showMsg('success','Rendición enviada correctamente. Tu aprobador recibirá un correo de notificación.');
+    document.getElementById('nombre').value='';
+    document.getElementById('pais').value='';
+    document.getElementById('correo-aprobador').value='';
+    document.getElementById('nombre-aprobador').value='';
+    document.getElementById('gastos-container').innerHTML='';
+    gastos=[]; gastoCount=0;
+    document.getElementById('total-local').textContent='—';
+    document.getElementById('total-currency').textContent='Selecciona un país primero';
+  } catch(err){ showMsg('error','No se pudo conectar con el servidor. Verifica tu conexión.'); }
+  btn.disabled=false;
+  btn.innerHTML='Enviar rendición';
+}
+
+agregarGasto();
+</script>
+</body>
+</html>
+,USD:'
+let gastos = [], gastoCount = 0;
+
+function getMonedaLocal(){ return PAIS_MONEDA[document.getElementById('pais').value] || null; }
+
+function onPaisChange(){
+  const monedaLocal = getMonedaLocal();
+  gastos.forEach(g => {
+    const sel = document.getElementById('moneda-'+g.id);
+    if(sel && monedaLocal) sel.value = monedaLocal;
+    fetchRateForGasto(g.id);
+  });
+  actualizarTotal();
+  const pais = document.getElementById('pais').value;
+  document.getElementById('total-currency').textContent = monedaLocal ? `en ${monedaLocal} · moneda local de ${pais}` : 'Selecciona un país primero';
+}
+
+function agregarGasto(){
+  if(gastos.length >= 10){ alert('Máximo 10 gastos por rendición'); return; }
+  gastoCount++;
+  const id = gastoCount;
+  gastos.push({id, rate: null, file: null});
+  const monedaLocal = getMonedaLocal();
+  const hoy = new Date().toISOString().split('T')[0];
+  const div = document.createElement('div');
+  div.className = 'gasto-card';
+  div.id = 'gasto-'+id;
+  div.innerHTML = `
+    <div class="gasto-header">
+      <span class="gasto-num">Gasto #${id}</span>
+      <button class="btn-remove" onclick="quitarGasto(${id})">×</button>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Fecha *</label>
+        <input type="date" id="fecha-${id}" value="${hoy}" onchange="if(this.value.length===10) fetchRateForGasto(${id})">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Monto *</label>
+        <div class="amount-row">
+          <select id="moneda-${id}" onchange="fetchRateForGasto(${id})">
+            <option value="">—</option>
+            <option value="CLP" ${monedaLocal==='CLP'?'selected':''}>CLP</option>
+            <option value="PEN" ${monedaLocal==='PEN'?'selected':''}>PEN</option>
+            <option value="COP" ${monedaLocal==='COP'?'selected':''}>COP</option>
+            <option value="MXN" ${monedaLocal==='MXN'?'selected':''}>MXN</option>
+            <option value="USD" ${monedaLocal==='USD'?'selected':''}>USD</option>
+          </select>
+          <input type="number" id="monto-${id}" placeholder="0" min="0" step="any" oninput="updateConvGasto(${id})">
+        </div>
+        <div class="conv-pill" id="conv-${id}">
+          <div class="conv-left">
+            <div class="conv-label" id="conv-label-${id}">Equiv. en moneda local</div>
+            <div class="conv-rate" id="conv-rate-${id}">—</div>
+          </div>
+          <div class="conv-value" id="conv-val-${id}">—</div>
+        </div>
+        <div class="rate-src" id="rate-src-${id}">Open Exchange Rates</div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Descripción *</label>
+      <input type="text" id="desc-${id}" placeholder="Ej: Almuerzo con cliente">
+    </div>
+    <div class="form-group" style="margin-bottom:0">
+      <label>Factura / Boleta</label>
+      <div class="upload-area" onclick="document.getElementById('file-${id}').click()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:3px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div>Adjuntar archivo · JPG, PNG o PDF</div>
+      </div>
+      <input type="file" id="file-${id}" accept=".jpg,.jpeg,.png,.pdf" style="display:none" onchange="onFileGasto(${id},this)">
+      <div class="file-preview" id="fprev-${id}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b2a8e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span id="fname-${id}">—</span>
+        <span class="remove-file" onclick="clearFileGasto(${id})">Quitar</span>
+      </div>
+    </div>`;
+  document.getElementById('gastos-container').appendChild(div);
+  if(monedaLocal) fetchRateForGasto(id);
+}
+
+function quitarGasto(id){
+  gastos = gastos.filter(g => g.id !== id);
+  document.getElementById('gasto-'+id).remove();
+  actualizarTotal();
+}
+
+async function fetchRateForGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const fecha = document.getElementById('fecha-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  if(!g || !moneda || !fecha || fecha.length !== 10 || !monedaLocal) return;
+  if(moneda === monedaLocal){ g.rate = 1; updateConvGasto(id); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  document.getElementById('rate-src-'+id).style.display = 'block';
+  document.getElementById('conv-label-'+id).textContent = `Equiv. en ${monedaLocal}`;
+  document.getElementById('conv-val-'+id).textContent = '...';
+  try{
+    const symbols = moneda === 'USD' ? monedaLocal : `${moneda},${monedaLocal}`;
+    const r = await fetch(`https://openexchangerates.org/api/historical/${fecha}.json?app_id=${APP_ID}&symbols=${symbols}`);
+    const d = await r.json();
+    if(d.rates){
+      const rateMoneda = moneda === 'USD' ? 1 : (1 / d.rates[moneda]);
+      const rateLocal = monedaLocal === 'USD' ? 1 : d.rates[monedaLocal];
+      g.rate = parseFloat((rateMoneda * rateLocal).toFixed(6));
+    } else { g.rate = null; }
+    document.getElementById('conv-rate-'+id).textContent = g.rate ? `1 ${moneda} = ${g.rate.toFixed(4)} ${monedaLocal}` : 'Tasa no disponible';
+  } catch(e){ g.rate = null; document.getElementById('conv-rate-'+id).textContent = 'Error al consultar'; }
+  updateConvGasto(id);
+}
+
+function updateConvGasto(id){
+  const g = gastos.find(x => x.id === id);
+  const moneda = document.getElementById('moneda-'+id)?.value;
+  const monedaLocal = getMonedaLocal();
+  const monto = parseFloat(document.getElementById('monto-'+id)?.value);
+  if(!g || !moneda || !monedaLocal) return;
+  if(moneda === monedaLocal){ document.getElementById('conv-'+id).style.display = 'none'; actualizarTotal(); return; }
+  document.getElementById('conv-'+id).style.display = 'flex';
+  if(!monto || isNaN(monto) || !g.rate){ document.getElementById('conv-val-'+id).textContent = '—'; actualizarTotal(); return; }
+  const equiv = monto * g.rate;
+  const simbolo = MONEDA_SIMBOLO[monedaLocal] || '';
+  document.getElementById('conv-val-'+id).textContent = `${simbolo}${equiv.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}`;
+  actualizarTotal();
+}
+
+function actualizarTotal(){
+  const monedaLocal = getMonedaLocal();
+  let total = 0, ok = true;
+  gastos.forEach(g => {
+    const monto = parseFloat(document.getElementById('monto-'+g.id)?.value || 0);
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    if(!moneda) return;
+    if(moneda === monedaLocal){ total += monto; }
+    else if(g.rate && monto){ total += monto * g.rate; }
+    else if(monto){ ok = false; }
+  });
+  const simbolo = monedaLocal ? (MONEDA_SIMBOLO[monedaLocal] || '') : '';
+  document.getElementById('total-local').textContent = monedaLocal
+    ? (ok ? `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal}` : `${simbolo}${total.toLocaleString('es-CL',{maximumFractionDigits:2})} ${monedaLocal} *`)
+    : '—';
+}
+
+function onFileGasto(id, input){
+  const g = gastos.find(x => x.id === id);
+  if(!g || !input.files[0]) return;
+  g.file = input.files[0];
+  document.getElementById('fname-'+id).textContent = g.file.name;
+  document.getElementById('fprev-'+id).style.display = 'flex';
+}
+
+function clearFileGasto(id){
+  const g = gastos.find(x => x.id === id);
+  if(!g) return;
+  g.file = null;
+  document.getElementById('file-'+id).value = '';
+  document.getElementById('fprev-'+id).style.display = 'none';
+}
+
+function showMsg(type, txt){
+  const el = document.getElementById('msg');
+  el.className = 'msg '+type;
+  el.textContent = txt;
+  el.style.display = 'block';
+}
+
+async function enviarRendicion(){
+  const nombre = document.getElementById('nombre').value.trim();
+  const pais = document.getElementById('pais').value;
+  const correoAprobador = document.getElementById('correo-aprobador').value.trim();
+  const nombreAprobador = document.getElementById('nombre-aprobador').value.trim();
+  const monedaLocal = getMonedaLocal();
+  if(!nombre||!pais||!correoAprobador||!nombreAprobador){ showMsg('error','Completa todos los datos del trabajador y aprobador'); return; }
+  if(gastos.length===0){ showMsg('error','Agrega al menos un gasto'); return; }
+  for(const g of gastos){
+    const monto = document.getElementById('monto-'+g.id)?.value;
+    const desc = document.getElementById('desc-'+g.id)?.value;
+    const moneda = document.getElementById('moneda-'+g.id)?.value;
+    const fecha = document.getElementById('fecha-'+g.id)?.value;
+    if(!monto||!desc||!moneda||!fecha){ showMsg('error',`Completa todos los campos del gasto #${g.id}`); return; }
+  }
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Enviando...';
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const rendicionId = `REN-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  try{
+    for(let i=0; i<gastos.length; i++){
+      const g = gastos[i];
+      const monto = parseFloat(document.getElementById('monto-'+g.id).value);
+      const moneda = document.getElementById('moneda-'+g.id).value;
+      const fecha = document.getElementById('fecha-'+g.id).value;
+      const desc = document.getElementById('desc-'+g.id).value.trim();
+      const esLocal = moneda === monedaLocal;
+      const montoLocal = esLocal ? monto : (g.rate && monto ? parseFloat((monto * g.rate).toFixed(2)) : '');
+      const tasaCambio = esLocal ? 1 : (g.rate ? parseFloat(g.rate.toFixed(6)) : '');
+      const fd = new FormData();
+      fd.append('rendicion_id', rendicionId);
+      fd.append('nombre', nombre);
+      fd.append('pais', pais);
+      fd.append('correo_aprobador', correoAprobador);
+      fd.append('nombre_aprobador', nombreAprobador);
+      fd.append('gasto_num', i+1);
+      fd.append('total_gastos', gastos.length);
+      fd.append('fecha', fecha);
+      fd.append('moneda_original', moneda);
+      fd.append('monto_original', monto);
+      fd.append('moneda_local', monedaLocal);
+      fd.append('tasa_cambio', tasaCambio);
+      fd.append('monto_local', montoLocal);
+      if(g.file) fd.append('archivo', g.file);
+      await fetch(WEBHOOK_URL, {method:'POST', body:fd});
+    }
+    showMsg('success','Rendición enviada correctamente. Tu aprobador recibirá un correo de notificación.');
+    document.getElementById('nombre').value='';
+    document.getElementById('pais').value='';
+    document.getElementById('correo-aprobador').value='';
+    document.getElementById('nombre-aprobador').value='';
+    document.getElementById('gastos-container').innerHTML='';
+    gastos=[]; gastoCount=0;
+    document.getElementById('total-local').textContent='—';
+    document.getElementById('total-currency').textContent='Selecciona un país primero';
+  } catch(err){ showMsg('error','No se pudo conectar con el servidor. Verifica tu conexión.'); }
+  btn.disabled=false;
+  btn.innerHTML='Enviar rendición';
+}
+
+agregarGasto();
+</script>
+</body>
+</html>
+,EUR:'€'};
 let gastos = [], gastoCount = 0;
 
 function getMonedaLocal(){ return PAIS_MONEDA[document.getElementById('pais').value] || null; }
