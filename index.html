@@ -60,7 +60,6 @@ input:focus,select:focus{outline:none;border-color:#fa345e;box-shadow:0 0 0 3px 
 <body>
 <div class="top-bar">
   <div class="logo">
-    <div class="logo-mark"><svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg></div>
     <div>
       <div class="logo-text">Apprecio</div>
       <div class="logo-sub">Portal corporativo</div>
@@ -311,7 +310,9 @@ async function enviarRendicion(){
   const btn = document.getElementById('btn-submit');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Enviando...';
-  const rendicionId = 'REN-'+Date.now();
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const rendicionId = `REN-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   try{
     for(let i=0; i<gastos.length; i++){
       const g = gastos[i];
@@ -333,7 +334,6 @@ async function enviarRendicion(){
       fd.append('fecha', fecha);
       fd.append('moneda_original', moneda);
       fd.append('monto_original', monto);
-      fd.append('descripcion', desc);
       fd.append('moneda_local', monedaLocal);
       fd.append('tasa_cambio', tasaCambio);
       fd.append('monto_local', montoLocal);
