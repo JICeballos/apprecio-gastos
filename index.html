@@ -74,6 +74,10 @@ input:focus,select:focus{outline:none;border-color:#fa345e;box-shadow:0 0 0 3px 
       <input type="text" id="nombre" placeholder="Ej: María González" required>
     </div>
     <div class="form-group">
+      <label>Correo corporativo *</label>
+      <input type="email" id="correo-trabajador" placeholder="trabajador@apprecio.com" required>
+    </div>
+    <div class="form-group">
       <label>País *</label>
       <select id="pais" required onchange="onPaisChange()">
         <option value="">Selecciona...</option>
@@ -299,7 +303,8 @@ async function enviarRendicion(){
   const correoAprobador = document.getElementById('correo-aprobador').value.trim();
   const nombreAprobador = document.getElementById('nombre-aprobador').value.trim();
   const monedaLocal = getMonedaLocal();
-  if(!nombre||!pais||!correoAprobador||!nombreAprobador){ showMsg('error','Completa todos los datos del trabajador y aprobador'); return; }
+  const correoTrabajador = document.getElementById('correo-trabajador').value.trim();
+  if(!nombre||!pais||!correoTrabajador||!correoAprobador||!nombreAprobador){ showMsg('error','Completa todos los datos del trabajador y aprobador'); return; }
   if(gastos.length===0){ showMsg('error','Agrega al menos un gasto'); return; }
   for(const g of gastos){
     const monto = document.getElementById('monto-'+g.id)?.value;
@@ -325,8 +330,10 @@ async function enviarRendicion(){
       const montoLocal = esLocal ? monto : (g.rate && monto ? parseFloat((monto * g.rate).toFixed(2)) : '');
       const tasaCambio = esLocal ? 1 : (g.rate ? parseFloat(g.rate.toFixed(6)) : '');
       const fd = new FormData();
+      fd.append('token', 'appr-2026-xK9mN3pQ7rL2');
       fd.append('rendicion_id', rendicionId);
       fd.append('nombre', nombre);
+      fd.append('correo_trabajador', correoTrabajador);
       fd.append('pais', pais);
       fd.append('correo_aprobador', correoAprobador);
       fd.append('nombre_aprobador', nombreAprobador);
